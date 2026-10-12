@@ -34,13 +34,6 @@ $env:OPENAI_API_KEY="sk-xxxx"
 - **DeepSeek**（推荐，便宜中文强）：https://platform.deepseek.com
 - **OpenAI**：https://platform.openai.com
 
-## 上线卖钱的路径（45天计划书对应）
-
-1. **本地先用**（现在）：SQLite 存数据，自己当第一个用户
-2. **接云端**：把 `db.py` 的 SQLite 换成 Supabase（免费 Postgres）
-3. **开收款**：Gumroad 建产品（$19 一次性），打开侧边栏「付费墙」开关
-4. **部署**：推到 Streamlit Community Cloud（免费）
-
 ## 目录结构
 
 ```

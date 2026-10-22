@@ -26,6 +26,16 @@ _load_env()
 
 
 def _cfg():
+    # 优先从 Streamlit Secrets 读（Streamlit Cloud 部署时）
+    try:
+        import streamlit as st
+        if st.secrets.get("SUPABASE_URL"):
+            url = st.secrets["SUPABASE_URL"].rstrip("/")
+            key = st.secrets.get("SUPABASE_KEY", "")
+            return url, key
+    except Exception:
+        pass
+    # 退回到环境变量 / .env（本地运行时）
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
     key = os.environ.get("SUPABASE_KEY", "")
     return url, key

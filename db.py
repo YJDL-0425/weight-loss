@@ -2,6 +2,9 @@
 """数据库层：Supabase 云数据库（REST API）。
 
 表结构见 supabase_schema.sql（需在 Supabase SQL Editor 里执行一次建表）。
+
+用户隔离：所有表带 user_code 字段，所有业务函数第一个参数为 user，
+查询/写入/删除均限定在该编码的数据空间内。
 """
 import os
 
@@ -65,23 +68,30 @@ def _get(table, params=None):
     return r.json() if r.text else []
 
 
-def _post(table, data, upsert=False):
+def _post(table, data, upsert=False, on_conflict=None):
     _check()
     url, _ = _cfg()
     headers = _headers()
+    params = None
     if upsert:
         headers["Prefer"] = "resolution=merge-duplicates"
-    r = requests.post(f"{url}/rest/v1/{table}", headers=headers, json=data, timeout=25)
+        if on_conflict:
+            params = {"on_conflict": on_conflict}
+    r = requests.post(f"{url}/rest/v1/{table}", headers=headers, json=data,
+                      params=params, timeout=25)
     if r.status_code >= 400:
         raise RuntimeError(f"写入 {table} 失败({r.status_code}): {r.text[:300]}")
     return r
 
 
-def _delete(table, id_val):
+def _delete(table, id_val, user=None):
     _check()
     url, _ = _cfg()
+    params = {"id": f"eq.{id_val}"}
+    if user:
+        params["user_code"] = f"eq.{user}"
     r = requests.delete(f"{url}/rest/v1/{table}", headers=_headers(),
-                        params={"id": f"eq.{id_val}"}, timeout=25)
+                        params=params, timeout=25)
     if r.status_code >= 400:
         raise RuntimeError(f"删除失败({r.status_code}): {r.text[:300]}")
     return r
@@ -94,21 +104,24 @@ def init_db():
 
 # ---------- 每日基础数据 ----------
 
-def add_log(date, weight=None, sleep_hours=None, mood=None, note=""):
+def add_log(user, date, weight=None, sleep_hours=None, mood=None, note=""):
     _post("daily_logs", {
+        "user_code": user,
         "date": str(date),
         "weight": weight,
         "sleep_hours": sleep_hours,
         "mood": mood,
         "note": note,
-    }, upsert=True)
+    }, upsert=True, on_conflict="user_code,date")
 
 
-def get_logs() -> pd.DataFrame:
-    rows = _get("daily_logs", {"select": "*", "order": "date.asc"})
+def get_logs(user) -> pd.DataFrame:
+    rows = _get("daily_logs", {"select": "*", "user_code": f"eq.{user}",
+                               "order": "date.asc"})
     df = pd.DataFrame(rows)
     if df.empty:
-        df = pd.DataFrame(columns=["id", "date", "weight", "sleep_hours", "mood", "note", "created_at"])
+        df = pd.DataFrame(columns=["id", "user_code", "date", "weight", "sleep_hours",
+                                   "mood", "note", "created_at"])
     elif "date" in df:
         df["date"] = pd.to_datetime(df["date"])
     return df
@@ -116,8 +129,9 @@ def get_logs() -> pd.DataFrame:
 
 # ---------- 食物明细 ----------
 
-def add_food_entry(date, name, amount, unit, calories):
+def add_food_entry(user, date, name, amount, unit, calories):
     _post("food_entries", {
+        "user_code": user,
         "date": str(date),
         "name": name,
         "amount": amount,
@@ -126,24 +140,26 @@ def add_food_entry(date, name, amount, unit, calories):
     })
 
 
-def get_food_entries(date=None) -> pd.DataFrame:
-    params = {"select": "*", "order": "id.asc"}
+def get_food_entries(user, date=None) -> pd.DataFrame:
+    params = {"select": "*", "user_code": f"eq.{user}", "order": "id.asc"}
     if date:
         params["date"] = f"eq.{date}"
     df = pd.DataFrame(_get("food_entries", params))
     if df.empty:
-        df = pd.DataFrame(columns=["id", "date", "name", "amount", "unit", "calories", "created_at"])
+        df = pd.DataFrame(columns=["id", "user_code", "date", "name", "amount",
+                                   "unit", "calories", "created_at"])
     return df
 
 
-def delete_food_entry(entry_id):
-    _delete("food_entries", entry_id)
+def delete_food_entry(user, entry_id):
+    _delete("food_entries", entry_id, user)
 
 
 # ---------- 运动明细 ----------
 
-def add_exercise_entry(date, name, minutes, calories):
+def add_exercise_entry(user, date, name, minutes, calories):
     _post("exercise_entries", {
+        "user_code": user,
         "date": str(date),
         "name": name,
         "minutes": minutes,
@@ -151,27 +167,28 @@ def add_exercise_entry(date, name, minutes, calories):
     })
 
 
-def get_exercise_entries(date=None) -> pd.DataFrame:
-    params = {"select": "*", "order": "id.asc"}
+def get_exercise_entries(user, date=None) -> pd.DataFrame:
+    params = {"select": "*", "user_code": f"eq.{user}", "order": "id.asc"}
     if date:
         params["date"] = f"eq.{date}"
     df = pd.DataFrame(_get("exercise_entries", params))
     if df.empty:
-        df = pd.DataFrame(columns=["id", "date", "name", "minutes", "calories", "created_at"])
+        df = pd.DataFrame(columns=["id", "user_code", "date", "name", "minutes",
+                                   "calories", "created_at"])
     return df
 
 
-def delete_exercise_entry(entry_id):
-    _delete("exercise_entries", entry_id)
+def delete_exercise_entry(user, entry_id):
+    _delete("exercise_entries", entry_id, user)
 
 
 # ---------- 每日汇总 ----------
 
-def get_daily_summary() -> pd.DataFrame:
-    """合并三张表，得到每天一条的汇总。"""
-    logs = get_logs()
-    foods = get_food_entries()
-    exercises = get_exercise_entries()
+def get_daily_summary(user) -> pd.DataFrame:
+    """合并三张表，得到每天一条的汇总（仅当前编码的数据）。"""
+    logs = get_logs(user)
+    foods = get_food_entries(user)
+    exercises = get_exercise_entries(user)
 
     if not foods.empty:
         foods["date"] = pd.to_datetime(foods["date"])
@@ -204,17 +221,18 @@ def get_daily_summary() -> pd.DataFrame:
 
 # ---------- 设置 ----------
 
-def set_setting(key, value):
-    _post("settings", {"key": key, "value": str(value)}, upsert=True)
+def set_setting(user, key, value):
+    _post("settings", {"user_code": user, "key": key, "value": str(value)},
+          upsert=True, on_conflict="user_code,key")
 
 
-def get_setting(key, default=None):
-    rows = _get("settings", {"key": f"eq.{key}", "limit": "1"})
+def get_setting(user, key, default=None):
+    rows = _get("settings", {"key": f"eq.{key}", "user_code": f"eq.{user}", "limit": "1"})
     if rows:
         return rows[0].get("value", default)
     return default
 
 
-def get_all_settings():
-    rows = _get("settings", {"select": "*"})
+def get_all_settings(user):
+    rows = _get("settings", {"select": "*", "user_code": f"eq.{user}"})
     return {r["key"]: r["value"] for r in rows}

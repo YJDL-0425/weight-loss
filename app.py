@@ -2,8 +2,12 @@
 """减肥数据看板 MVP —— 你的减肥私人数据分析师。
 
 运行：streamlit run app.py
+
+用户隔离：通过「我的编码」区分数据空间。相同编码 = 同一份数据。
+链接带 ?u=编码 可直接进入对应编码（用于手机端同步）。
 """
 import os
+import secrets as _secrets
 
 import streamlit as st
 import pandas as pd
@@ -17,6 +21,19 @@ import license as license_mod
 import photo
 
 st.set_page_config(page_title="减肥数据看板", page_icon="🏃", layout="wide")
+
+
+# ---------- 用户编码 ----------
+_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _gen_code(n=6):
+    return "".join(_secrets.choice(_CODE_CHARS) for _ in range(n))
+
+
+def _norm_code(s):
+    s = str(s or "").strip().upper()
+    return "".join(c for c in s if c in _CODE_CHARS)[:6]
 
 
 def _load_env():
@@ -40,10 +57,36 @@ def _load_env():
 _load_env()
 db.init_db()
 
+# 链接参数优先（?u=编码），否则沿用会话中的编码，都没有则生成新编码
+_u = _norm_code(st.query_params.get("u"))
+if len(_u) == 6:
+    st.session_state["user_code"] = _u
+elif "user_code" not in st.session_state:
+    st.session_state["user_code"] = _gen_code()
+user_code = st.session_state["user_code"]
+if st.query_params.get("u") != user_code:
+    st.query_params["u"] = user_code
+
+
 # ---------- 侧边栏 ----------
 with st.sidebar:
     st.title("🏃 减肥数据看板")
     st.caption("你的减肥私人数据分析师")
+
+    st.divider()
+
+    st.subheader("👤 我的编码")
+    _input = st.text_input("编码（相同编码 = 同一份数据）",
+                           value=st.session_state["user_code"],
+                           max_chars=6,
+                           help="手机上填同一编码即可看到电脑端的所有数据")
+    _norm = _norm_code(_input)
+    if _norm and _norm != st.session_state["user_code"]:
+        st.session_state["user_code"] = _norm
+        st.query_params["u"] = _norm
+        st.rerun()
+    st.caption(f"当前编码：**{user_code}**\n\n在手机浏览器地址栏的链接末尾加上下面参数，即可同步本编码的数据：")
+    st.code(f"?u={user_code}", language=None)
 
     st.divider()
 
@@ -90,16 +133,16 @@ with st.sidebar:
             st.code(f"URL: {_url}\nKey前缀: {_key[:15]}...\n\nHTTP {_resp.status_code}\n{_resp.text[:600]}")
         except Exception as _e:  # noqa: BLE001
             st.code(f"连接失败：{_e}")
-    st.caption("数据现保存在 Supabase 云端。")
+    st.caption("数据现保存在 Supabase 云端，按编码隔离。")
 
 
-def latest_weight():
-    logs = db.get_logs()
+def latest_weight(user):
+    logs = db.get_logs(user)
     w = logs["weight"].dropna()
     if len(w):
         return float(w.iloc[-1])
     try:
-        return float(db.get_setting("start_weight") or 70)
+        return float(db.get_setting(user, "start_weight") or 70)
     except (TypeError, ValueError):
         return 70.0
 
@@ -135,11 +178,11 @@ with tab1:
         st.success(st.session_state["flash"])
         st.session_state["flash"] = ""
 
-    settings = db.get_all_settings()
+    settings = db.get_all_settings(user_code)
 
     # 今日进度
-    foods_today = db.get_food_entries(day_str)
-    exercises_today = db.get_exercise_entries(day_str)
+    foods_today = db.get_food_entries(user_code, day_str)
+    exercises_today = db.get_exercise_entries(user_code, day_str)
     intake_today = foods_today["calories"].sum() if not foods_today.empty else 0
     ex_today = exercises_today["calories"].sum() if not exercises_today.empty else 0
 
@@ -161,7 +204,7 @@ with tab1:
     st.subheader("📋 基础数据（每天一条）")
     # 回填当天已保存的数据
     _w, _s, _m, _n = 0.0, 0.0, 3, ""
-    _logs = db.get_logs()
+    _logs = db.get_logs(user_code)
     if not _logs.empty:
         _row = _logs[_logs["date"].dt.strftime("%Y-%m-%d") == day_str]
         if not _row.empty:
@@ -180,7 +223,7 @@ with tab1:
         note = st.text_input("备注（可选）", value=_n)
         submitted = st.form_submit_button("💾 保存基础数据", use_container_width=True)
     if submitted:
-        db.add_log(day_str, weight if weight > 0 else None,
+        db.add_log(user_code, day_str, weight if weight > 0 else None,
                    sleep_hours if sleep_hours > 0 else None, mood, note)
         st.session_state["flash"] = f"已保存 {day_str} 的基础数据"
         st.rerun()
@@ -198,13 +241,13 @@ with tab1:
             st.image(img, width=200)
             if st.button("💾 保存照片", key=f"save_photo_{day_str}"):
                 try:
-                    photo.save_photo(day_str, img.getvalue())
+                    photo.save_photo(user_code, day_str, img.getvalue())
                     st.session_state["flash"] = f"已保存 {day_str} 的照片"
                     st.rerun()
                 except Exception as e:  # noqa: BLE001
                     st.error(f"照片上传失败：{e}")
     with ptab_b:
-        existing = photo.get_photo(day_str)
+        existing = photo.get_photo(user_code, day_str)
         if existing:
             st.image(existing, caption=f"{day_str} 的照片", use_container_width=True)
         else:
@@ -231,7 +274,8 @@ with tab1:
                 st.error(err)
             else:
                 for it in items:
-                    db.add_food_entry(day_str, it["name"], it["amount"], it["unit"], it["calories"])
+                    db.add_food_entry(user_code, day_str, it["name"], it["amount"],
+                                      it["unit"], it["calories"])
                 st.session_state["flash"] = f"已识别 {len(items)} 项，合计 {total} kcal"
                 st.rerun()
 
@@ -242,7 +286,7 @@ with tab1:
         m_amt = m3.number_input("数量", min_value=1, max_value=20, value=1, key="m_amt")
         if st.button("手动添加"):
             if m_name.strip() and m_kcal > 0:
-                db.add_food_entry(day_str, m_name.strip(), m_amt, "份", m_kcal)
+                db.add_food_entry(user_code, day_str, m_name.strip(), m_amt, "份", m_kcal)
                 st.session_state["flash"] = f"已添加 {m_name.strip()} ≈ {m_kcal} kcal"
                 st.rerun()
             else:
@@ -254,7 +298,7 @@ with tab1:
             col1, col2 = st.columns([5, 1])
             col1.write(f"· {r['name']} × {r['amount']}{r['unit']} = **{r['calories']:.0f} kcal**")
             if col2.button("删除", key=f"del_food_{r['id']}"):
-                db.delete_food_entry(r["id"])
+                db.delete_food_entry(user_code, r["id"])
                 st.rerun()
 
     st.divider()
@@ -264,11 +308,11 @@ with tab1:
     ec1, ec2, ec3 = st.columns([2, 1, 1])
     ex_name = ec1.selectbox("运动类型", list(food_db.EXERCISES.keys()), key="ex_name")
     ex_minutes = ec2.number_input("时长 (分钟)", min_value=5, max_value=300, value=30, step=5)
-    ec3.caption(f"当前体重 {latest_weight():.1f}kg")
+    ec3.caption(f"当前体重 {latest_weight(user_code):.1f}kg")
 
     if st.button("➕ 添加运动", use_container_width=True):
-        kcal = food_db.exercise_calories(ex_name, ex_minutes, latest_weight())
-        db.add_exercise_entry(day_str, ex_name, ex_minutes, kcal)
+        kcal = food_db.exercise_calories(ex_name, ex_minutes, latest_weight(user_code))
+        db.add_exercise_entry(user_code, day_str, ex_name, ex_minutes, kcal)
         st.session_state["flash"] = f"已添加：{ex_name} {ex_minutes} 分钟 ≈ {kcal} kcal"
         st.rerun()
 
@@ -278,7 +322,7 @@ with tab1:
             col1, col2 = st.columns([5, 1])
             col1.write(f"· {r['name']} {r['minutes']:.0f} 分钟 = **{r['calories']:.0f} kcal**")
             if col2.button("删除", key=f"del_ex_{r['id']}"):
-                db.delete_exercise_entry(r["id"])
+                db.delete_exercise_entry(user_code, r["id"])
                 st.rerun()
 
     st.divider()
@@ -296,7 +340,7 @@ with tab2:
     st.subheader("目标计划：算算你该吃多少、怎么练")
     st.caption("输入起始体重和目标体重，自动算每日热量 + 运动建议；目标太离谱会直接警告。")
 
-    df_now = db.get_logs()
+    df_now = db.get_logs(user_code)
     latest_w = None
     if not df_now.empty:
         w_now = df_now["weight"].dropna()
@@ -320,14 +364,14 @@ with tab2:
     if st.button("🎯 生成计划", type="primary", use_container_width=True):
         r = plan.weight_loss_plan(start_w, target_w, days, gender, height, age, activity)
 
-        db.set_setting("gender", gender)
-        db.set_setting("height", height)
-        db.set_setting("age", age)
-        db.set_setting("activity", activity)
-        db.set_setting("start_weight", start_w)
-        db.set_setting("target_weight", target_w)
-        db.set_setting("days", days)
-        db.set_setting("daily_intake_target", r["daily_intake"])
+        db.set_setting(user_code, "gender", gender)
+        db.set_setting(user_code, "height", height)
+        db.set_setting(user_code, "age", age)
+        db.set_setting(user_code, "activity", activity)
+        db.set_setting(user_code, "start_weight", start_w)
+        db.set_setting(user_code, "target_weight", target_w)
+        db.set_setting(user_code, "days", days)
+        db.set_setting(user_code, "daily_intake_target", r["daily_intake"])
 
         if r.get("mode") == "maintain":
             st.info(f"目标体重（{target_w}kg）≥ 起始体重（{start_w}kg），减脂计划不适用。"
@@ -363,11 +407,11 @@ with tab2:
 
 # ===== Tab 3：看板 =====
 with tab3:
-    summary = db.get_daily_summary()
+    summary = db.get_daily_summary(user_code)
     if summary.empty:
         st.info("暂无数据，请先在「记录」页录入。")
     else:
-        settings = db.get_all_settings()
+        settings = db.get_all_settings(user_code)
 
         w = summary["weight"].dropna()
         intake_s = summary["intake"]
@@ -460,7 +504,7 @@ with tab4:
     if not unlocked:
         st.warning("🔒 该功能需要付费解锁。请在左侧输入 License Key。")
     else:
-        summary = db.get_daily_summary()
+        summary = db.get_daily_summary(user_code)
         if summary.empty:
             st.info("暂无数据，先录入至少 1 天数据。")
         else:
@@ -470,7 +514,7 @@ with tab4:
                 recent = summary.sort_values("date").tail(7)
                 with st.spinner("正在生成报告..."):
                     report = ai_report.generate_report(recent, api_key, provider,
-                                                       db.get_all_settings())
+                                                       db.get_all_settings(user_code))
                 st.markdown("---")
                 st.markdown(report)
 
@@ -478,7 +522,7 @@ with tab4:
 with tab5:
     st.subheader("📸 变化回放")
     st.caption("每天拍照积累，挑战结束时用动画播放你的变化过程。")
-    photos = photo.list_photos()
+    photos = photo.list_photos(user_code)
     if not photos:
         st.info("还没有照片。去「📝 记录」页每天拍照上传，积累起来就能看变化了。")
     else:

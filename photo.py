@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""照片管理：上传到 Supabase 云存储，并生成变化动画 GIF。"""
+"""照片管理：上传到 Supabase 云存储，并生成变化动画 GIF。
+
+用户隔离：照片按 {user_code}/{date}.jpg 分文件夹存储。
+"""
 import io
 import os
 
@@ -25,6 +28,15 @@ _load_env()
 
 
 def _cfg():
+    # 优先从 Streamlit Secrets 读（Streamlit Cloud 部署时）
+    try:
+        import streamlit as st
+        if st.secrets.get("SUPABASE_URL"):
+            url = st.secrets["SUPABASE_URL"].rstrip("/")
+            key = st.secrets.get("SUPABASE_KEY", "")
+            return url, key
+    except Exception:
+        pass
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
     key = os.environ.get("SUPABASE_KEY", "")
     return url, key
@@ -44,7 +56,7 @@ def _public_url(path):
     return f"{url}/storage/v1/object/public/{BUCKET}/{path}"
 
 
-def save_photo(date_str, image_bytes):
+def save_photo(user, date_str, image_bytes):
     """上传某天照片到云存储（同一天重复上传会覆盖）。"""
     url, _ = _cfg()
     if not url:
@@ -56,7 +68,7 @@ def save_photo(date_str, image_bytes):
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=85)
 
-    path = f"{date_str}.jpg"
+    path = f"{user}/{date_str}.jpg"
     r = requests.post(
         f"{url}/storage/v1/object/{BUCKET}/{path}",
         headers=_headers("image/jpeg"),
@@ -68,12 +80,12 @@ def save_photo(date_str, image_bytes):
     return _public_url(path)
 
 
-def get_photo(date_str):
+def get_photo(user, date_str):
     """返回某天照片的公网 URL，不存在则返回 None。"""
     url, _ = _cfg()
     if not url:
         return None
-    public_url = _public_url(f"{date_str}.jpg")
+    public_url = _public_url(f"{user}/{date_str}.jpg")
     try:
         r = requests.head(public_url, timeout=15)
         if r.status_code == 200:
@@ -83,15 +95,15 @@ def get_photo(date_str):
     return None
 
 
-def list_photos():
-    """返回按日期升序的照片列表 [{date, path}]。"""
+def list_photos(user):
+    """返回按日期升序的照片列表 [{date, path}]（仅当前编码的文件夹）。"""
     url, _ = _cfg()
     if not url:
         return []
     r = requests.post(
         f"{url}/storage/v1/object/list/{BUCKET}",
         headers=_headers("application/json"),
-        json={"prefix": "", "limit": 500, "offset": 0},
+        json={"prefix": f"{user}/", "limit": 500, "offset": 0},
         timeout=25,
     )
     if r.status_code >= 300:
@@ -99,9 +111,12 @@ def list_photos():
     result = []
     for it in (r.json() or []):
         name = it.get("name", "")
-        if name.lower().endswith((".jpg", ".jpeg", ".png")):
-            date_str = os.path.splitext(name)[0]
-            result.append({"date": date_str, "path": _public_url(name)})
+        if not name.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue
+        # 文件名形如 {user_code}/2026-11-01.jpg
+        filename = name.split("/")[-1]
+        date_str = os.path.splitext(filename)[0]
+        result.append({"date": date_str, "path": _public_url(name)})
     result.sort(key=lambda x: x["date"])
     return result
 

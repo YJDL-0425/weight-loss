@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>热量账本 · 像记账一样减脂</title>
+<meta name="description" content="逐条记录食物和运动，自动算热量缺口，AI 周报陪伴你的减脂全程。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📒</text></svg>">
+<link rel="preconnect" href="https://fonts.loli.net">
+<link href="https://fonts.loli.net/css2?family=ZCOOL+QingKe+HuangYou&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://registry.npmmirror.com/echarts/5.5.0/files/dist/echarts.min.js"></script>
+<style>
+:root{
+  --bg:#EAF7F1; --card:#FFFFFF; --ink:#0B3B2E; --ink2:#5B7A6F; --line:#DCEDE4;
+  --mint:#10B981; --mint-d:#0B8F63; --mint-soft:#D9F3E7; --coral:#FF7A59; --amber:#F5B544;
+  --r:22px; --shadow:0 10px 30px rgba(16,185,129,.10),0 2px 6px rgba(11,59,46,.05);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  background:
+    radial-gradient(600px 300px at 110% -5%, rgba(16,185,129,.14), transparent 60%),
+    radial-gradient(500px 260px at -10% 10%, rgba(245,181,68,.10), transparent 60%),
+    var(--bg);
+  color:var(--ink); min-height:100dvh;
+}
+#app{max-width:520px;margin:0 auto;padding:18px 16px calc(30px + env(safe-area-inset-bottom))}
+.num{font-family:"Outfit",sans-serif;font-variant-numeric:tabular-nums}
+.disp{font-family:"ZCOOL QingKe HuangYou","Noto Sans SC",sans-serif;font-weight:400;letter-spacing:.5px}
+
+/* ---------- 顶栏 ---------- */
+.top{display:flex;align-items:center;gap:10px;padding:6px 2px 16px}
+.top .back{width:38px;height:38px;border-radius:14px;background:var(--card);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;box-shadow:var(--shadow)}
+.top h1{font-size:20px;flex:1}
+.top .spacer{flex:1}
+
+/* ---------- 首页头 ---------- */
+.hero{padding:8px 2px 4px}
+.hero .row{display:flex;align-items:center;justify-content:space-between}
+.hero .hi{font-size:26px;line-height:1.2}
+.hero .date{color:var(--ink2);font-size:13px;margin-top:4px}
+.code-chip{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);
+  padding:7px 12px;border-radius:999px;font-size:12px;color:var(--ink2);box-shadow:var(--shadow);cursor:pointer}
+.code-chip b{color:var(--mint-d);font-size:13px;letter-spacing:1px}
+
+/* ---------- 概览 ---------- */
+.today{background:linear-gradient(135deg,#0C9A6E,#0B8F63);border-radius:var(--r);padding:18px;color:#fff;
+  margin-top:14px;box-shadow:0 14px 34px rgba(11,143,99,.28);position:relative;overflow:hidden}
+.today::after{content:"";position:absolute;right:-30px;top:-30px;width:130px;height:130px;border-radius:50%;
+  background:rgba(255,255,255,.08)}
+.today::before{content:"";position:absolute;right:24px;bottom:-40px;width:90px;height:90px;border-radius:50%;
+  background:rgba(255,255,255,.06)}
+.today .tt{font-size:13px;opacity:.85;display:flex;justify-content:space-between}
+.today .big{font-size:44px;line-height:1.1;margin:6px 0 2px}
+.today .big small{font-size:15px;opacity:.8;font-weight:400}
+.today .sub{font-size:12px;opacity:.85}
+.tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.tcell{background:rgba(255,255,255,.14);border-radius:14px;padding:8px 10px}
+.tcell .k{font-size:11px;opacity:.8}
+.tcell .v{font-size:19px;margin-top:2px}
+
+/* ---------- 卡片宫格 ---------- */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);cursor:pointer;
+  border:1px solid var(--line);transition:transform .15s ease;position:relative;overflow:hidden}
+.card:active{transform:scale(.97)}
+.card .ico{width:44px;height:44px;border-radius:15px;display:flex;align-items:center;justify-content:center;
+  font-size:22px;margin-bottom:10px}
+.card .name{font-size:16px;font-weight:600}
+.card .desc{font-size:12px;color:var(--ink2);margin-top:3px;line-height:1.5}
+.card .arrow{position:absolute;right:14px;top:18px;color:#B8CFC5;font-size:15px}
+.i-green{background:#D9F3E7}.i-orange{background:#FFE9E1}.i-blue{background:#E0EFFC}
+.i-yellow{background:#FCF1D8}.i-pink{background:#FDE5EE}.i-gray{background:#EDF1EF}
+
+/* ---------- 通用区块 ---------- */
+.sec{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;
+  margin-top:14px;box-shadow:var(--shadow)}
+.sec h3{font-size:15px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.sec h3 .tag{font-size:11px;color:var(--mint-d);background:var(--mint-soft);padding:2px 8px;border-radius:999px;font-weight:400}
+.cap{font-size:12px;color:var(--ink2);line-height:1.6}
+.divider{height:1px;background:var(--line);margin:12px 0}
+
+/* ---------- 表单 ---------- */
+label.fl{font-size:12px;color:var(--ink2);display:block;margin:10px 0 5px}
+input,select,textarea{width:100%;border:1.5px solid var(--line);border-radius:14px;padding:11px 13px;
+  font-size:15px;font-family:inherit;background:#FBFEFC;color:var(--ink);outline:none;transition:border .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--mint)}
+textarea{resize:vertical;min-height:74px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:8px 14px;border-radius:999px;border:1.5px solid var(--line);background:#fff;font-size:13px;cursor:pointer}
+.chip.on{background:var(--mint);border-color:var(--mint);color:#fff;font-weight:600}
+.btn{width:100%;border:none;border-radius:16px;padding:14px;font-size:15.5px;font-weight:600;font-family:inherit;
+  cursor:pointer;transition:transform .12s ease}
+.btn:active{transform:scale(.98)}
+.btn-p{background:var(--mint);color:#fff;box-shadow:0 8px 20px rgba(16,185,129,.3)}
+.btn-g{background:var(--mint-soft);color:var(--mint-d)}
+.btn-del{background:none;color:#E2634C;font-size:12.5px;border:none;cursor:pointer;padding:4px 8px}
+
+/* ---------- 列表项 ---------- */
+.item{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px dashed var(--line)}
+.item:last-child{border-bottom:none}
+.item .em{font-size:18px}
+.item .nm{flex:1;font-size:14px}
+.item .nm small{color:var(--ink2);font-size:12px}
+.item .kc{font-weight:600;font-size:14.5px}
+.empty{text-align:center;color:#A9C4B8;font-size:13px;padding:22px 0}
+
+/* ---------- 指标行 ---------- */
+.mrow{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.mrow.m4{grid-template-columns:repeat(2,1fr)}
+.mcell{background:#FBFEFC;border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+.mcell .k{font-size:11.5px;color:var(--ink2)}
+.mcell .v{font-size:22px;margin-top:3px}
+.mcell .v.up{color:#E2634C}.mcell .v.down{color:var(--mint-d)}
+
+/* ---------- 图表 ---------- */
+.chart{width:100%;height:260px}
+.chart-s{width:100%;height:230px}
+
+/* ---------- 照片 ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pgrid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;cursor:pointer;border:1px solid var(--line)}
+.lightbox{position:fixed;inset:0;background:rgba(4,26,19,.92);z-index:99;display:flex;align-items:center;justify-content:center}
+.lightbox img{max-width:94vw;max-height:80vh;border-radius:16px}
+.lb-bar{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:14px}
+.lb-bar button{background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:999px;padding:10px 20px;font-size:14px;cursor:pointer}
+.lb-date{position:fixed;top:20px;left:0;right:0;text-align:center;color:#fff;font-size:14px;opacity:.85}
+
+/* ---------- 提示 ---------- */
+#toast{position:fixed;left:50%;bottom:calc(40px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);
+  background:var(--ink);color:#fff;padding:11px 20px;border-radius:999px;font-size:13.5px;opacity:0;pointer-events:none;
+  transition:all .25s;z-index:100;max-width:86vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.loading{display:flex;justify-content:center;padding:40px 0;color:var(--ink2);font-size:13px}
+.spin{width:22px;height:22px;border:3px solid var(--mint-soft);border-top-color:var(--mint);border-radius:50%;
+  margin-right:9px;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.fade{animation:fd .3s ease}
+@keyframes fd{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.stagger>*{animation:fd .35s ease backwards}
+.stagger>*:nth-child(2){animation-delay:.05s}.stagger>*:nth-child(3){animation-delay:.1s}
+.stagger>*:nth-child(4){animation-delay:.15s}.stagger>*:nth-child(5){animation-delay:.2s}
+.stagger>*:nth-child(6){animation-delay:.25s}
+.foot{margin-top:22px;text-align:center;font-size:11.5px;color:#9DBBAF;line-height:1.7}
+.report{font-size:14px;line-height:1.9}
+.report h4{margin:10px 0 4px;color:var(--mint-d)}
+.report ul{padding-left:18px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+
+<script>
+/* =====================================================
+   热量账本 · H5 版
+   直连 Supabase（REST）。数据按「用户编码」隔离，与 Python 版完全兼容。
+   注意：SUPA_KEY 是 publishable 公开密钥（类似网页验证码的身份标识，可放前端），
+        DeepSeek/OpenAI 密钥不写死在代码里，由用户在「设置」页自行填写。
+   ===================================================== */
+
+// ↓↓↓ 你的 Supabase 项目配置（publishable key 是公开令牌，可安全放前端） ↓↓↓
+const SUPA = {
+  url: "https://ufwlaqeitqxhdzlybwev.supabase.co",
+  key: "PASTE_YOUR_PUBLISHABLE_KEY_HERE"
+};
+
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const EXERCISES = { "快走":3.5,"散步":2.5,"慢跑":6.0,"跳绳":8.0,"游泳":7.0,"骑行":5.0,
+  "瑜伽":2.5,"力量训练":4.0,"椭圆机":5.0,"开合跳":7.0,"爬山":5.5,"跳舞":4.5 };
+const MOODS = ["😖","😕","😐","🙂","😄"];
+const AI_LIMIT = 15;
+
+/* ---------------- 状态 ---------------- */
+const S = {
+  code: null,
+  date: new Date().toISOString().slice(0,10),
+  settings: {},
+  cache: { logs:null, foods:{}, exs:{}, photos:null },
+  aiKey: localStorage.getItem("ai_key") || "",
+  aiProvider: localStorage.getItem("ai_provider") || "DeepSeek",
+};
+
+/* ---------------- 工具 ---------------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtDate = d => { const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; };
+function toast(msg, ms=2200){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),ms); }
+function loading(html="加载中"){ $("#app").innerHTML = `<div class="loading"><div class="spin"></div>${html}…</div>`; }
+function genCode(n=6){ return Array.from({length:n},()=>CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]).join(""); }
+function normCode(s){ return String(s||"").toUpperCase().split("").filter(c=>CODE_CHARS.includes(c)).slice(0,6).join(""); }
+function weight(){ const l=S.cache.logs||[]; const w=l.filter(r=>r.weight!=null).sort((a,b)=>a.date<b.date?-1:1); return w.length?parseFloat(w[w.length-1].weight):70; }
+function latestWeight(){ try{ return weight(); }catch(e){ return 70; } }
+
+function initCode(){
+  const qp = new URLSearchParams(location.search).get("u");
+  const n = normCode(qp);
+  if (n && n.length===6) localStorage.setItem("wl_code", n);
+  else if (!localStorage.getItem("wl_code")) localStorage.setItem("wl_code", genCode());
+  S.code = localStorage.getItem("wl_code");
+  const want = `?u=${S.code}`;
+  if (!location.search.includes(`u=${S.code}`)) history.replaceState(null,"",want);
+}
+
+/* ---------------- Supabase REST ---------------- */
+async function sb(method, path, {params={}, body=null, prefer=null, raw=false}={}){
+  const url = new URL(`${SUPA.url}${path}`);
+  Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));
+  const headers = { "apikey":SUPA.key, "Authorization":`Bearer ${SUPA.key}`, "Content-Type":"application/json" };
+  if (prefer) headers["Prefer"] = prefer;
+  const r = await fetch(url, { method, headers, body: body?JSON.stringify(body):undefined });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0,180)}`);
+  return raw ? r : (r.text()? r.json() : []);
+}
+const tb = t => `/rest/v1/${t}`;
+async function dbSelect(table, params){ return sb("GET", tb(table), {params}); }
+async function dbUpsert(table, body, conflict){
+  return sb("POST", tb(table), { body, prefer:"resolution=merge-duplicates", params:{on_conflict:conflict} });
+}
+async function dbInsert(table, body){ return sb("POST", tb(table), { body, prefer:"return=minimal" }); }
+async function dbDelete(table, id){ return sb("DELETE", tb(table), { params:{ id:`eq.${id}`, user_code:`eq.${S.code}` } }); }
+
+async function loadAll(){
+  const [logs, settings] = await Promise.all([
+    dbSelect("daily_logs", { select:"*", user_code:`eq.${S.code}`, order:"date.asc" }),
+    dbSelect("settings", { select:"*", user_code:`eq.${S.code}` }),
+  ]);
+  S.cache.logs = logs;
+  S.settings = Object.fromEntries(settings.map(r=>[r.key,r.value]));
+}
+async function dayFoods(date){ if(!S.cache.foods[date]) S.cache.foods[date]=await dbSelect("food_entries",{select:"*",user_code:`eq.${S.code}`,date:`eq.${date}`,order:"id.asc"}); return S.cache.foods[date]; }
+async function dayExs(date){ if(!S.cache.exs[date]) S.cache.exs[date]=await dbSelect("exercise_entries",{select:"*",user_code:`eq.${S.code}`,date:`eq.${date}`,order:"id.asc"}); return S.cache.exs[date]; }
+function invalidate(date){ delete S.cache.foods[date]; delete S.cache.exs[date]; S.cache.logs=null; }
+
+/* ---------------- 计算逻辑（与 Python 版对齐） ---------------- */
+function metKcal(met, minutes, w){ return Math.round(met * w * minutes/60); }
+function computePlan(p){
+  const bmr = p.gender==="男" ? 10*p.start_w+6.25*p.height-5*p.age+5 : 10*p.start_w+6.25*p.height-5*p.age-161;
+  const act = { "久坐":1.2,"轻度活动":1.375,"中度活动":1.55,"高度活动":1.725 }[p.activity]||1.375;
+  const tdee = bmr*act;
+  const mode = p.target_w>=p.start_w ? "maintain" : "cut";
+  const loss = p.start_w-p.target_w;
+  const weekly = mode==="maintain"?0:Math.min(loss*7/p.days, 1.0);
+  let intake = mode==="maintain" ? Math.round(tdee) : Math.round(tdee - loss*7700/p.days);
+  const floor = p.gender==="男"?1500:1200;
+  let below=false; if(mode==="cut" && intake<floor){ intake=floor; below=true; }
+  const realistic = Math.round(p.days/7*10)/10;
+  const isUnrealistic = mode==="cut" && loss>realistic;
+  const suggested = mode==="cut" ? Math.ceil(loss*7) : p.days;
+  const bmi = (p.target_w/((p.height/100)**2));
+  return { bmr:Math.round(bmr), tdee:Math.round(tdee), intake, weekly:Math.round(weekly*100)/100,
+    mode, below, floor, realistic, isUnrealistic, suggested, bmi:Math.round(bmi*10)/10,
+    protein: Math.round(p.start_w*1.5) };
+}
+function todaySummary(f, e){
+  const intake = f.reduce((s,r)=>s+(+r.calories||0),0);
+  const ex = e.reduce((s,r)=>s+(+r.calories||0),0);
+  return { intake, ex };
+}
+function aggregate(){
+  const logs = S.cache.logs||[];
+  const byDate = {};
+  logs.forEach(r=>byDate[r.date]={date:r.date, weight:r.weight?+r.weight:null, sleep:r.sleep_hours?+r.sleep_hours:null, mood:r.mood, intake:0, ex:0});
+  return byDate;
+}
+async function fullSummary(){
+  const [fs, es] = await Promise.all([
+    dbSelect("food_entries",{select:"date,calories",user_code:`eq.${S.code}`}),
+    dbSelect("exercise_entries",{select:"date,calories",user_code:`eq.${S.code}`}),
+  ]);
+  const byDate = aggregate();
+  Object.values(byDate).forEach(d=>{ d.intake=0; d.ex=0; });
+  fs.forEach(r=>{ (byDate[r.date]=byDate[r.date]||{date:r.date,weight:null,sleep:null,mood:null,intake:0,ex:0}).intake += +r.calories||0; });
+  es.forEach(r=>{ (byDate[r.date]=byDate[r.date]||{date:r.date,weight:null,sleep:null,mood:null,intake:0,ex:0}).ex += +r.calories||0; });
+  return Object.values(byDate).sort((a,b)=>a.date<b.date?-1:1);
+}
+
+/* ---------------- 路由 ---------------- */
+const routes = { "/":pageHome, "/record":pageRecord, "/plan":pagePlan, "/stats":pageStats,
+                 "/report":pageReport, "/replay":pageReplay, "/settings":pageSettings };
+function nav(path){ location.hash = path; }
+window.addEventListener("hashchange", render);
+async function render(){
+  if (needKey()) return pageSetup();
+  window.scrollTo(0,0);
+  const path = (location.hash||"#/").slice(1) || "/";
+  const fn = routes[path] || pageHome;
+  try { await fn(); } catch(e){ $("#app").innerHTML = `<div class="sec fade"><h3>😮 出错了</h3><p class="cap">${esc(e.message)}</p></div>`; }
+}
+
+/* ---------------- 页面：首页 ---------------- */
+async function pageHome(){
+  loading();
+  await loadAll();
+  const f = await dayFoods(S.date), e = await dayExs(S.date);
+  const { intake, ex } = todaySummary(f,e);
+  const target = +(S.settings.daily_intake_target||0);
+  const remain = target? target - (intake-ex) : 0;
+  const net = intake - ex;
+  const w = latestWeight();
+  const cards = [
+    {p:"/record", i:"📝", bg:"i-green", n:"记账", d:"体重 / 饮食 / 运动 / 拍照"},
+    {p:"/plan",   i:"🎯", bg:"i-orange", n:"目标计划", d:"算出每日该吃多少"},
+    {p:"/stats",  i:"📊", bg:"i-blue", n:"数据看板", d:"曲线、缺口与异常"},
+    {p:"/report", i:"🤖", bg:"i-yellow", n:"AI 周报", d:"每周一份体检报告"},
+    {p:"/replay", i:"📸", bg:"i-pink", n:"变化回放", d:"照片动画见证改变"},
+    {p:"/settings", i:"⚙️", bg:"i-gray", n:"设置", d:"编码 / AI 密钥"},
+  ];
+  $("#app").innerHTML = `
+  <div class="hero fade">
+    <div class="row">
+      <div>
+        <div class="hi disp">📒 热量账本</div>
+        <div class="date">${S.date.slice(5).replace("-"," / ")} · 像记账一样减脂</div>
+      </div>
+      <div class="code-chip" onclick="nav('/settings')">我的编码 <b>${S.code}</b></div>
+    </div>
+  </div>
+  <div class="today fade">
+    <div class="tt"><span>今日热量</span><span>${target?`目标 ${target} kcal`:"未设目标"}</span></div>
+    <div class="big num">${Math.round(net)} <small>kcal 缺口</small></div>
+    <div class="sub">${net<=0?"✅ 今天是热量赤字，方向对了":`多吃了 ${Math.round(net)} kcal，去运动或明天少吃补回来`}</div>
+    <div class="tgrid">
+      <div class="tcell"><div class="k">已摄入</div><div class="v num">${Math.round(intake)}</div></div>
+      <div class="tcell"><div class="k">运动消耗</div><div class="v num">${Math.round(ex)}</div></div>
+      <div class="tcell"><div class="k">当前体重</div><div class="v num">${w.toFixed(1)}</div></div>
+    </div>
+  </div>
+  <div class="grid stagger">${cards.map(c=>`
+    <div class="card" onclick="nav('${c.p}')">
+      <div class="arrow">›</div>
+      <div class="ico ${c.bg}">${c.i}</div>
+      <div class="name">${c.n}</div>
+      <div class="desc">${c.d}</div>
+    </div>`).join("")}
+  </div>
+  <div class="foot">⚠️ 本工具仅提供数据记录与一般性建议，不构成医疗建议<br>如有健康问题请先咨询医生</div>`;
+}
+
+/* ---------------- 子页头 ---------------- */
+const head = (title, right="") => `
+  <div class="top"><div class="back" onclick="nav('/')">‹</div><h1 class="disp">${title}</h1>${right}</div>`;
+
+/* ---------------- 页面：记账 ---------------- */
+async function pageRecord(){
+  loading();
+  await loadAll();
+  const f = await dayFoods(S.date), e = await dayExs(S.date);
+  const log = (S.cache.logs||[]).find(r=>r.date===S.date) || {};
+  const mood = +(log.mood??3);
+  const ph = await photoUrl(S.date);
+  $("#app").innerHTML = `
+  ${head("📝 记账", `<div class="code-chip" onclick="shiftDay(-1)">‹ 前一天</div><div class="code-chip" style="margin-left:6px" onclick="shiftDay(1)">后一天 ›</div>`)}
+  <div class="sec fade">
+    <h3>📅 ${S.date} <span class="tag">${S.date===fmtDate(new Date())?"今天":""}</span></h3>
+    <label class="fl">体重 (kg)　填 0 表示未记录</label>
+    <div class="row3">
+      <input id="w" type="number" step="0.1" min="0" max="500" value="${log.weight!=null?+log.weight:0}">
+      <input id="sl" type="number" step="0.5" min="0" max="24" value="${log.sleep_hours!=null?+log.sleep_hours:0}" placeholder="睡眠h">
+      <input id="nt" type="text" value="${esc(log.note||"")}" placeholder="备注">
+    </div>
+    <label class="fl">心情</label>
+    <div class="chips" id="mood">${MOODS.map((m,i)=>`<div class="chip ${i+1===mood?"on":""}" data-v="${i+1}">${m}</div>`).join("")}</div>
+    <div style="height:12px"></div>
+    <button class="btn btn-p" onclick="saveLog()">💾 保存基础数据</button>
+  </div>
+
+  <div class="sec fade">
+    <h3>📸 当日照片</h3>
+    <div id="phbox">${ph?`<img src="${ph}" style="width:100%;border-radius:14px">`:`<p class="empty">当天还没有照片</p>`}</div>
+    <input type="file" id="pfile" accept="image/*" style="display:none" onchange="uploadPhoto(this)">
+    <div style="height:10px"></div>
+    <button class="btn btn-g" onclick="$('#pfile').click()">📷 ${ph?"重新上传照片":"拍照 / 上传照片"}</button>
+  </div>
+
+  <div class="sec fade">
+    <h3>🍚 饮食 <span class="tag">AI 可识别</span></h3>
+    <textarea id="foodtext" placeholder="例如：早餐两个鸡蛋一杯牛奶，午餐一份红烧肉盖浇饭"></textarea>
+    <div style="height:10px"></div>
+    <button class="btn btn-p" onclick="aiFood()">🤖 AI 识别并添加</button>
+    <div class="divider"></div>
+    <div class="row3">
+      <input id="fname" type="text" placeholder="食物名">
+      <input id="fkcal" type="number" placeholder="热量 kcal" min="0" max="5000">
+      <button class="btn btn-g" style="padding:10px" onclick="manualFood()">手动添加</button>
+    </div>
+    <div class="divider"></div>
+    <div id="flist">${f.length? f.map(r=>itemRow("🍚",`${esc(r.name)} <small>× ${r.amount}${r.unit}</small>`,`+${Math.round(r.calories)}`,r.id,"food")).join("") : `<p class="empty">还没记录饮食</p>`}</div>
+  </div>
+
+  <div class="sec fade">
+    <h3>🏃 运动 <span class="tag">按当前体重算消耗</span></h3>
+    <div class="row3">
+      <select id="exname">${Object.keys(EXERCISES).map(k=>`<option>${k}</option>`).join("")}</select>
+      <input id="exmin" type="number" min="5" max="300" step="5" value="30">
+      <button class="btn btn-g" style="padding:10px" onclick="addEx()">添加</button>
+    </div>
+    <div class="divider"></div>
+    <div id="elist">${e.length? e.map(r=>itemRow("🏃",`${esc(r.name)} <small>${Math.round(r.minutes)} 分钟</small>`,`-${Math.round(r.calories)}`,r.id,"ex")).join("") : `<p class="empty">还没记录运动</p>`}</div>
+  </div>
+  <div class="foot">⚠️ 不构成医疗建议，如有健康问题请咨询医生</div>`;
+  $("#mood").addEventListener("click", ev=>{
+    const c = ev.target.closest(".chip"); if(!c) return;
+    $("#mood").querySelectorAll(".chip").forEach(x=>x.classList.remove("on"));
+    c.classList.add("on");
+  });
+}
+function itemRow(em, name, kcal, id, kind){
+  return `<div class="item"><span class="em">${em}</span><span class="nm">${name}</span>
+    <span class="kc num">${kcal} kcal</span><button class="btn-del" onclick="del('${kind}',${id})">删除</button></div>`;
+}
+function shiftDay(d){ S.date = fmtDate(new Date(new Date(S.date).getTime()+d*864e5)); pageRecord(); }
+async function saveLog(){
+  const w=+$("#w").value||null, sl=+$("#sl").value||null;
+  const mood=+($("#mood .chip.on")?.dataset.v||3), nt=$("#nt").value.trim();
+  await dbUpsert("daily_logs",{user_code:S.code,date:S.date,weight:w,sleep_hours:sl,mood,note:nt},"user_code,date");
+  invalidate(S.date); toast("已保存基础数据 ✅"); pageRecord();
+}
+async function aiFood(){
+  const text=$("#foodtext").value.trim();
+  if(!text) return toast("先描述你吃了什么");
+  if(!S.aiKey) return toast("未配置 AI 密钥，请到「设置」填写，或手动添加",3000);
+  if(!(await quotaOk())) return toast(`今日 AI 次数已用完（${AI_LIMIT} 次/天）`,3000);
+  toast("AI 识别中…",60000);
+  try{
+    const items = await aiParseFood(text);
+    for(const it of items) await dbInsert("food_entries",{user_code:S.code,date:S.date,name:it.name,amount:it.amount,unit:it.unit,calories:it.calories});
+    invalidate(S.date); toast(`已识别 ${items.length} 项 ✅`); pageRecord();
+  }catch(e){ toast("识别失败："+e.message,3500); }
+}
+async function manualFood(){
+  const n=$("#fname").value.trim(), k=+$("#fkcal").value||0;
+  if(!n||!k) return toast("填食物名和热量");
+  await dbInsert("food_entries",{user_code:S.code,date:S.date,name:n,amount:1,unit:"份",calories:k});
+  invalidate(S.date); toast("已添加 ✅"); pageRecord();
+}
+async function addEx(){
+  const name=$("#exname").value, min=+$("#exmin").value||30;
+  const kcal=metKcal(EXERCISES[name], min, latestWeight());
+  await dbInsert("exercise_entries",{user_code:S.code,date:S.date,name,minutes:min,calories:kcal});
+  invalidate(S.date); toast(`已添加：${name} ${min} 分钟 ≈ ${kcal} kcal`); pageRecord();
+}
+async function del(kind,id){
+  await dbDelete(kind==="food"?"food_entries":"exercise_entries", id);
+  invalidate(S.date); toast("已删除"); pageRecord();
+}
+
+/* ---------------- 照片 ---------------- */
+function photoPath(date){ return `photos/${S.code}/${date}.jpg`; }
+function photoUrl(date){ return `${SUPA.url}/storage/v1/object/public/${photoPath(date)}`; }
+async function uploadPhoto(input){
+  const file = input.files[0]; if(!file) return;
+  toast("上传中…",30000);
+  const img = await createImageBitmap(file);
+  const sc = Math.min(1, 1200/Math.max(img.width,img.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
+  cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+  const blob = await new Promise(res=>cv.toBlob(res,"image/jpeg",.85));
+  const r = await fetch(`${SUPA.url}/storage/v1/object/${photoPath(S.date)}`,{
+    method:"POST", headers:{apikey:SUPA.key,Authorization:`Bearer ${SUPA.key}`,"Content-Type":"image/jpeg"}, body:blob });
+  if(!r.ok) return toast("上传失败："+(await r.text()).slice(0,120),3500);
+  toast("照片已保存 ✅"); pageRecord();
+}
+async function listPhotos(){
+  const r = await fetch(`${SUPA.url}/storage/v1/object/list/photos`,{
+    method:"POST", headers:{apikey:SUPA.key,Authorization:`Bearer ${SUPA.key}`,"Content-Type":"application/json"},
+    body: JSON.stringify({prefix:`${S.code}/`,limit:500,offset:0}) });
+  if(!r.ok) return [];
+  return (await r.json()||[]).filter(it=>/\.(jpe?g|png)$/i.test(it.name))
+    .map(it=>({date:it.name.split("/").pop().replace(/\.[^.]+$/,""), path:`${SUPA.url}/storage/v1/object/public/photos/${it.name}`}))
+    .sort((a,b)=>a.date<b.date?-1:1);
+}
+
+/* ---------------- 页面：目标计划 ---------------- */
+async function pagePlan(){
+  loading();
+  await loadAll();
+  const st = S.settings, w = latestWeight();
+  $("#app").innerHTML = `
+  ${head("🎯 目标计划")}
+  <div class="sec fade">
+    <label class="fl">起始体重 (kg)</label><input id="sw" type="number" step="0.1" value="${st.start_weight?+st.start_weight:w}">
+    <label class="fl">目标体重 (kg)</label><input id="tw" type="number" step="0.1" value="${st.target_weight?(+st.target_weight):Math.max(20,w-5)}">
+    <label class="fl">目标天数</label><input id="days" type="number" value="${st.days||45}" min="14" max="180">
+    <div class="row2" style="margin-top:10px">
+      <div><label class="fl">性别</label><select id="g"><option ${st.gender==="男"?"selected":""}>男</option><option ${st.gender==="女"?"selected":""}>女</option></select></div>
+      <div><label class="fl">身高 (cm)</label><input id="h" type="number" value="${st.height||170}"></div>
+    </div>
+    <div class="row2" style="margin-top:10px">
+      <div><label class="fl">年龄</label><input id="age" type="number" value="${st.age||30}"></div>
+      <div><label class="fl">活动量</label><select id="act">${["久坐","轻度活动","中度活动","高度活动"].map(a=>`<option ${st.activity===a?"selected":""}>${a}</option>`).join("")}</select></div>
+    </div>
+    <div style="height:14px"></div>
+    <button class="btn btn-p" onclick="genPlan()">🎯 生成计划</button>
+  </div>
+  <div id="planbox"></div>`;
+  if(st.daily_intake_target) $("#planbox").innerHTML = planCard({
+    bmr:0,tdee:0,intake:+st.daily_intake_target,mode:"cut",weekly:0,isUnrealistic:false,bmi:0,protein:(+st.start_weight||70)*1.5,
+  }, true);
+}
+function planCard(r, cached=false){
+  return `<div class="sec fade">
+    <h3>📋 你的计划 ${cached?'<span class="tag">当前生效</span>':""}</h3>
+    <div class="mrow">
+      <div class="mcell"><div class="k">建议每日摄入</div><div class="v num" style="color:var(--mint-d)">${r.intake} <small style="font-size:12px">kcal</small></div></div>
+      <div class="mcell"><div class="k">预计每周减</div><div class="v num">${r.weekly.toFixed(2)} <small style="font-size:12px">kg</small></div></div>
+      ${r.bmr?`<div class="mcell"><div class="k">基础代谢 BMR</div><div class="v num">${r.bmr}</div></div>
+      <div class="mcell"><div class="k">每日消耗 TDEE</div><div class="v num">${r.tdee}</div></div>`:""}
+    </div>
+    ${r.mode==="maintain"?`<p class="cap" style="margin-top:10px">目标体重 ≥ 起始体重，按维持体重计算：每日约 ${r.intake} kcal。</p>`:""}
+    <div class="divider"></div>
+    <p class="cap">🥩 蛋白质目标：每天约 <b>${Math.round(r.protein)}g</b>（鸡胸/鸡蛋/鱼虾/豆腐）<br>
+    🥬 蔬菜 ≥ 500g，喝水 ≥ 2L<br>🏃 每周运动 3-5 次，力量+有氧结合</p>
+  </div>`;
+}
+async function genPlan(){
+  const p = { start_w:+$("#sw").value, target_w:+$("#tw").value, days:+$("#days").value,
+    gender:$("#g").value, height:+$("#h").value, age:+$("#age").value, activity:$("#act").value };
+  if(!(p.start_w>0&&p.target_w>0&&p.days>0)) return toast("请完整填写");
+  const r = computePlan(p);
+  const kv = { gender:p.gender, height:p.height, age:p.age, activity:p.activity,
+    start_weight:p.start_w, target_weight:p.target_w, days:p.days, daily_intake_target:r.intake };
+  for(const [k,v] of Object.entries(kv)) await dbUpsert("settings",{user_code:S.code,key:k,value:String(v)},"user_code,key");
+  S.settings = {...S.settings, ...Object.fromEntries(Object.entries(kv).map(([k,v])=>[k,String(v)]))};
+  let warn = "";
+  if(r.mode!=="maintain"){
+    if(r.isUnrealistic) warn = `<div class="sec fade" style="border-color:#F3C9C0"><p class="cap" style="color:#C0533C">📉 ${p.days} 天减 ${p.start_w-p.target_w}kg 偏激进（健康上限约 ${r.realistic}kg/每周≤1kg）。建议：延长到 <b>${r.suggested_days||r.suggested} 天</b>，或目标上调到 <b>${(p.start_w-r.realistic).toFixed(1)}kg</b>。</p></div>`;
+    if(r.below) warn += `<div class="sec fade"><p class="cap">已按健康底线 ${r.floor} kcal 计算，不建议吃更少。</p></div>`;
+    if(r.bmi<18.5) warn += `<div class="sec fade"><p class="cap">⚠️ 目标 BMI ${r.bmi} 偏瘦（<18.5），建议谨慎。</p></div>`;
+  }
+  $("#planbox").innerHTML = warn + planCard(r);
+  toast("计划已保存 ✅");
+}
+
+/* ---------------- 页面：数据看板 ---------------- */
+async function pageStats(){
+  loading();
+  await loadAll();
+  const sum = await fullSummary();
+  if(!sum.length){ $("#app").innerHTML = head("📊 数据看板")+`<div class="sec"><p class="empty">暂无数据，先去「记账」页录入</p></div>`; return; }
+  const ws = sum.filter(d=>d.weight!=null);
+  const wArr = ws.map(d=>d.weight);
+  const dw = wArr.length>=2 ? wArr[wArr.length-1]-wArr[0] : null;
+  const avgIn = sum.filter(d=>d.intake>0); 
+  const avgSl = sum.filter(d=>d.sleep!=null);
+  const tw = S.settings.target_weight? +S.settings.target_weight : null;
+  const sw = S.settings.start_weight? +S.settings.start_weight : null;
+  let goalHtml = "";
+  if(tw && sw && wArr.length){
+    const cur = wArr[wArr.length-1];
+    const rate = (wArr[wArr.length-1]-wArr[0]) / Math.max(1,(new Date(ws[ws.length-1].date)-new Date(ws[0].date))/864e5); // kg/天
+    const proj = cur + rate*30;
+    const onTrack = proj <= cur + (tw-cur)*0 ;
+    goalHtml = `<div class="sec fade"><h3>🎯 目标进度</h3><div class="mrow m4">
+      <div class="mcell"><div class="k">起始</div><div class="v num">${(+sw).toFixed(1)}</div></div>
+      <div class="mcell"><div class="k">当前</div><div class="v num">${cur.toFixed(1)}</div></div>
+      <div class="mcell"><div class="k">目标</div><div class="v num">${(+tw).toFixed(1)}</div></div>
+      <div class="mcell"><div class="k">已减</div><div class="v num ${cur<=sw?'down':'up'}">${(cur-sw>=0?'+':'')}${(cur-sw).toFixed(1)}</div></div>
+    </div>
+    <p class="cap" style="margin-top:8px">按当前趋势（${rate>=0?'+':''}${(rate*7).toFixed(2)} kg/周），30 天后约 <b>${proj.toFixed(1)}kg</b>${proj<=tw?"，可达标 ✅":`，距目标 ${tw}kg 还差 ${(proj-tw).toFixed(1)}kg`}</p></div>`;
+  }
+  $("#app").innerHTML = `
+  ${head("📊 数据看板")}
+  <div class="sec fade"><div class="mrow m4">
+    <div class="mcell"><div class="k">记录天数</div><div class="v num">${sum.length}</div></div>
+    <div class="mcell"><div class="k">体重变化</div><div class="v num ${dw==null?'':dw<=0?'down':'up'}">${dw==null?"—":(dw>=0?"+":"")+dw.toFixed(1)}</div></div>
+    <div class="mcell"><div class="k">平均摄入</div><div class="v num">${avgIn.length?Math.round(avgIn.reduce((s,d)=>s+d.intake,0)/avgIn.length):"—"}</div></div>
+    <div class="mcell"><div class="k">平均睡眠</div><div class="v num">${avgSl.length?(avgSl.reduce((s,d)=>s+d.sleep,0)/avgSl.length).toFixed(1):"—"}</div></div>
+  </div></div>
+  ${goalHtml}
+  <div class="sec fade"><h3>⚖️ 体重曲线</h3><div id="cw" class="chart"></div></div>
+  <div class="sec fade"><h3>🔥 摄入 vs 消耗</h3><div id="ce" class="chart-s"></div></div>
+  <div class="foot">⚠️ 不构成医疗建议，如有健康问题请咨询医生</div>`;
+  drawCharts(sum);
+}
+function drawCharts(sum){
+  const days = sum.filter(d=>d.weight!=null);
+  if(days.length){
+    echarts.init($("#cw")).setOption({
+      grid:{left:44,right:16,top:20,bottom:28},
+      tooltip:{trigger:"axis"},
+      xAxis:{type:"category",data:days.map(d=>d.date.slice(5)),axisLine:{lineStyle:{color:"#CFE5DB"}}},
+      yAxis:{type:"value",scale:true,splitLine:{lineStyle:{color:"#E8F4EE"}}},
+      series:[{type:"line",data:days.map(d=>d.weight),smooth:true,symbolSize:6,
+        lineStyle:{color:"#0B8F63",width:3},itemStyle:{color:"#10B981"},
+        areaStyle:{color:{type:"linear",x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:"rgba(16,185,129,.25)"},{offset:1,color:"rgba(16,185,129,0)"}]}}}]
+    });
+  } else $("#cw").parentNode.innerHTML = `<p class="empty">还没有体重数据</p>`;
+  const ed = sum.filter(d=>d.intake>0||d.ex>0).slice(-14);
+  if(ed.length){
+    echarts.init($("#ce")).setOption({
+      grid:{left:44,right:16,top:34,bottom:28},
+      legend:{top:0,textStyle:{color:"#5B7A6F"}},
+      tooltip:{trigger:"axis"},
+      xAxis:{type:"category",data:ed.map(d=>d.date.slice(5)),axisLine:{lineStyle:{color:"#CFE5DB"}}},
+      yAxis:{type:"value",splitLine:{lineStyle:{color:"#E8F4EE"}}},
+      series:[
+        {name:"摄入",type:"bar",data:ed.map(d=>Math.round(d.intake)),itemStyle:{color:"#F5B544",borderRadius:[6,6,0,0]}},
+        {name:"运动消耗",type:"bar",data:ed.map(d=>Math.round(d.ex)),itemStyle:{color:"#10B981",borderRadius:[6,6,0,0]}},
+        ...(S.settings.daily_intake_target?[{name:"目标",type:"line",data:ed.map(()=>+S.settings.daily_intake_target),lineStyle:{type:"dashed",color:"#FF7A59"},symbol:"none"}]:[])
+      ]
+    });
+  } else $("#ce").parentNode.innerHTML = `<p class="empty">还没有饮食/运动数据</p>`;
+}
+
+/* ---------------- 页面：AI 周报 ---------------- */
+async function pageReport(){
+  loading();
+  await loadAll();
+  const sum = await fullSummary();
+  $("#app").innerHTML = `
+  ${head("🤖 AI 周报")}
+  <div class="sec fade">
+    <p class="cap">基于最近 7 天数据生成${sum.length?`，当前共 ${sum.length} 天记录`:""}。${S.aiKey?"已配置 AI 引擎，生成个性化报告。":"未配置 AI 密钥，将生成免费的规则统计报告（到「设置」页可开启 AI 版）。"}</p>
+    <div style="height:12px"></div>
+    <button class="btn btn-p" onclick="genReport()">📄 生成本周报告</button>
+  </div>
+  <div id="repbox">${sum.length?`<div class="sec"><div class="report">${ruleReport(sum.slice(-7))}</div></div>`:""}</div>`;
+}
+function ruleReport(sum){
+  if(!sum.length) return "暂无数据";
+  const w = sum.filter(d=>d.weight!=null);
+  const intake = sum.filter(d=>d.intake>0), ex = sum.filter(d=>d.ex>0), sl = sum.filter(d=>d.sleep!=null);
+  const L = ["<h4>1️⃣ 本周总结</h4><ul>"];
+  if(w.length>=2){ const c=w[w.length-1].weight-w[0].weight; L.push(`<li>体重 ${w[0].weight.toFixed(1)} → ${w[w.length-1].weight.toFixed(1)}kg，累计${c<0?"减":"增"} ${Math.abs(c).toFixed(1)}kg</li>`); }
+  else L.push(`<li>体重记录不足，坚持每天空腹称重</li>`);
+  if(intake.length) L.push(`<li>平均摄入 ${Math.round(intake.reduce((s,d)=>s+d.intake,0)/intake.length)} kcal/天</li>`);
+  if(ex.length){ const m=ex.reduce((s,d)=>s+d.ex,0)/ex.length; L.push(`<li>平均运动消耗 ${Math.round(m)} kcal/天${m<100?"，偏低，建议每天快走 20 分钟":""}</li>`); }
+  if(sl.length){ const m=sl.reduce((s,d)=>s+d.sleep,0)/sl.length; L.push(`<li>平均睡眠 ${m.toFixed(1)} 小时${m<7?"，睡眠不足会拖慢减脂":""}</li>`); }
+  L.push("</ul><h4>2️⃣ 下周建议</h4><ul>");
+  const t = +(S.settings.daily_intake_target||0);
+  if(t && intake.length){ const a=intake.reduce((s,d)=>s+d.intake,0)/intake.length; L.push(`<li>${a>t?`把每日摄入降到 ${t} kcal 以内（当前平均 ${Math.round(a)}）`:`继续把摄入控制在 ${t} kcal 内，保持 ✅`}</li>`); }
+  L.push("<li>每周 3 次以上、每次 20 分钟的运动</li><li>每天同一时间空腹称重，减少波动干扰</li></ul>");
+  L.push(`<p style="margin-top:8px">💪 数据不会说谎，坚持下去，趋势会替你说话。</p>`);
+  return L.join("");
+}
+async function genReport(){
+  const sum = await fullSummary().then(a=>a.slice(-7));
+  if(!sum.length) return toast("先录入至少 1 天数据");
+  if(S.aiKey){
+    if(!(await quotaOk())) return toast(`今日 AI 次数已用完（${AI_LIMIT} 次/天）`,3000);
+    toast("AI 生成中…",60000);
+    try{
+      const payload = sum.map(d=>({日期:d.date,体重kg:d.weight,摄入kcal:d.intake||null,运动消耗kcal:d.ex||null,睡眠小时:d.sleep,心情:d.mood}));
+      const prompt = `你是一位专业的数据减肥教练。以下是用户最近的数据（JSON）：\n${JSON.stringify(payload)}\n\n请输出周报（中文，语气鼓励但客观）：1.【本周总结】2.【热量缺口分析】3.【异常提醒】4.【下周建议】（3条具体到数字）5.【一句话鼓励】`;
+      const md = await callLLM(prompt);
+      $("#repbox").innerHTML = `<div class="sec fade"><div class="report">${mdToHtml(md)}</div></div>`;
+      toast("已生成 ✅"); return;
+    }catch(e){ toast("AI 调用失败，已回退规则版："+e.message,3500); }
+  }
+  $("#repbox").innerHTML = `<div class="sec fade"><div class="report">${ruleReport(sum)}</div></div>`;
+}
+function mdToHtml(t){
+  return esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
+    .replace(/^【(.+?)】/gm,"<h4>【$1】</h4>").replace(/^#{1,4}\s*(.+)/gm,"<h4>$1</h4>")
+    .split(/\n/).map(l=>l.startsWith("<h")||l.startsWith("<p")?l:(l.trim()?l+"<br>":"")).join("");
+}
+
+/* ---------------- 页面：变化回放 ---------------- */
+let LB = {list:[],i:0};
+async function pageReplay(){
+  loading();
+  const photos = await listPhotos(); S.cache.photos = photos;
+  if(!photos.length){ $("#app").innerHTML = head("📸 变化回放")+`<div class="sec"><p class="empty">还没有照片。去「记账」页每天拍一张，积累起来看变化</p></div>`; return; }
+  $("#app").innerHTML = `
+  ${head("📸 变化回放")}
+  <div class="sec fade">
+    <p class="cap">已上传 <b>${photos.length}</b> 张（${photos[0].date} ~ ${photos[photos.length-1].date}）。点开任意一张可左右翻看。</p>
+    <div class="divider"></div>
+    <div class="pgrid">${photos.map((p,i)=>`<img src="${p.path}" loading="lazy" onclick="openLb(${i})">`).join("")}</div>
+  </div>`;
+}
+function openLb(i){ LB.list=S.cache.photos; LB.i=i; showLb(); }
+function showLb(){
+  const p = LB.list[LB.i];
+  const el = document.createElement("div");
+  el.className="lightbox"; el.id="lb";
+  el.innerHTML = `<div class="lb-date">${p.date}</div><img src="${p.path}">
+    <div class="lb-bar"><button onclick="lbShift(-1)">‹ 上一张</button><button onclick="closeLb()">关闭</button><button onclick="lbShift(1)">下一张 ›</button></div>`;
+  el.addEventListener("click", e=>{ if(e.target===el) closeLb(); });
+  document.body.appendChild(el);
+}
+function lbShift(d){ LB.i=(LB.i+d+LB.list.length)%LB.list.length; closeLb(); showLb(); }
+function closeLb(){ $("#lb")?.remove(); }
+
+/* ---------------- 页面：设置 ---------------- */
+async function pageSettings(){
+  loading();
+  await loadAll();
+  const used = await (async()=>{ try{ const k=`ai_usage_${fmtDate(new Date())}`; return +S.settings[k]||0; }catch(e){ return 0; } })();
+  const link = `${location.origin}${location.pathname}?u=${S.code}`;
+  $("#app").innerHTML = `
+  ${head("⚙️ 设置")}
+  <div class="sec fade">
+    <h3>👤 我的编码</h3>
+    <p class="cap">相同编码 = 同一份数据。换设备时，在浏览器打开下面的链接，或在这里输入另一个编码即可同步。</p>
+    <div style="height:10px"></div>
+    <input id="code" value="${S.code}" maxlength="6" style="text-transform:uppercase;font-family:Outfit;letter-spacing:4px;font-size:20px;text-align:center">
+    <div style="height:10px"></div>
+    <div class="row2">
+      <button class="btn btn-p" onclick="changeCode()">切换编码</button>
+      <button class="btn btn-g" onclick="copyLink()">📋 复制同步链接</button>
+    </div>
+    <p class="cap" style="margin-top:8px;word-break:break-all">${esc(link)}</p>
+  </div>
+  <div class="sec fade">
+    <h3>🤖 AI 引擎 <span class="tag">密钥只存本机</span></h3>
+    <label class="fl">引擎</label>
+    <select id="prov"><option ${S.aiProvider==="DeepSeek"?"selected":""}>DeepSeek</option><option ${S.aiProvider==="OpenAI"?"selected":""}>OpenAI</option></select>
+    <label class="fl">API Key</label>
+    <input id="aikey" type="password" value="${esc(S.aiKey)}" placeholder="sk-...">
+    <p class="cap" style="margin-top:6px">今日 AI 已用 ${used}/${AI_LIMIT} 次。Key 仅保存在你手机本地，用于调用心智模型生成识别与周报。</p>
+    <div style="height:10px"></div>
+    <button class="btn btn-p" onclick="saveAi()">保存 AI 设置</button>
+  </div>
+  <div class="sec fade">
+    <h3>⚠️ 免责声明</h3>
+    <p class="cap">本工具仅提供数据记录与一般性建议，不构成医疗建议。减重期间如出现不适，或患有慢性疾病、处于特殊生理期，请先咨询医生或注册营养师。</p>
+  </div>
+  <div class="foot">热量账本 · 数据保存在 Supabase 云端，按编码隔离</div>`;
+}
+async function changeCode(){
+  const n = normCode($("#code").value);
+  if(n.length!==6) return toast("编码是 6 位字母数字");
+  if(n===S.code) return;
+  S.code=n; localStorage.setItem("wl_code",n);
+  S.cache={logs:null,foods:{},exs:{},photos:null};
+  history.replaceState(null,"",`?u=${n}`);
+  toast("已切换编码 ✅"); pageSettings();
+}
+function copyLink(){
+  const link = `${location.origin}${location.pathname}?u=${S.code}`;
+  navigator.clipboard?.writeText(link).then(()=>toast("链接已复制，发到手机即可同步"),()=>toast("复制失败，请手动选中上面的链接"));
+}
+function saveAi(){
+  S.aiProvider=$("#prov").value; S.aiKey=$("#aikey").value.trim();
+  localStorage.setItem("ai_provider",S.aiProvider); localStorage.setItem("ai_key",S.aiKey);
+  toast("AI 设置已保存 ✅");
+}
+async function quotaOk(){
+  const k=`ai_usage_${fmtDate(new Date())}`;
+  try{
+    const rows = await dbSelect("settings",{key:`eq.${k}`,user_code:`eq.${S.code}`,limit:"1"});
+    const used = rows.length? +rows[0].value||0 : 0;
+    if(used>=AI_LIMIT) return false;
+    await dbUpsert("settings",{user_code:S.code,key:k,value:String(used+1)},"user_code,key");
+    return true;
+  }catch(e){ return true; }
+}
+
+/* ---------------- AI 调用 ---------------- */
+async function callLLM(prompt){
+  const isOAI = S.aiProvider==="OpenAI";
+  const url = isOAI? "https://api.openai.com/v1/chat/completions" : "https://api.deepseek.com/chat/completions";
+  const model = isOAI? "gpt-4o-mini" : "deepseek-chat";
+  const r = await fetch(url,{ method:"POST",
+    headers:{ "Authorization":`Bearer ${S.aiKey}`, "Content-Type":"application/json" },
+    body: JSON.stringify({ model, messages:[{role:"user",content:prompt}], temperature:.7 }) });
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = await r.json();
+  return j.choices[0].message.content;
+}
+async function aiParseFood(text){
+  const prompt = `你是营养师。分析用户描述的饮食，拆分每项食物并估算热量。\n用户描述：${text}\n只输出 JSON 数组，元素格式：{"name":"食物名","amount":数量,"unit":"单位","calories":整数kcal}。除 JSON 外不要输出任何文字。`;
+  const raw = await callLLM(prompt);
+  let s = raw.trim().replace(/^```(?:json)?\s*/,"").replace(/\s*```$/,"");
+  const a = s.indexOf("["), b = s.lastIndexOf("]");
+  return JSON.parse(s.slice(a,b+1)).map(it=>({
+    name:String(it.name||"食物").trim()||"食物",
+    amount:parseFloat(it.amount)||1, unit:String(it.unit||"份").trim()||"份",
+    calories:Math.round(+it.calories||0) }));
+}
+
+/* ---------------- 连接引导（首次打开粘贴 Supabase publishable key） ---------------- */
+function needKey(){ return !SUPA.key || SUPA.key.startsWith("PASTE_"); }
+function pageSetup(){
+  $("#app").innerHTML = `
+  <div class="hero fade"><div class="hi disp">📒 热量账本</div>
+  <div class="date">首次使用，需要一次连接配置</div></div>
+  <div class="sec fade">
+    <h3>🔑 粘贴 Supabase Publishable Key</h3>
+    <p class="cap">这是公开令牌（sb_publishable_ 开头），在 Supabase Dashboard → Project Settings → API Keys 里复制。粘贴一次后保存在本机。</p>
+    <div style="height:10px"></div>
+    <input id="sbkey" type="password" placeholder="sb_publishable_...">
+    <div style="height:12px"></div>
+    <button class="btn btn-p" onclick="saveKey()">连接</button>
+  </div>`;
+}
+function saveKey(){
+  const k = $("#sbkey").value.trim();
+  if(!k) return toast("请粘贴 key");
+  localStorage.setItem("sb_key", k);
+  SUPA.key = k;
+  toast("已连接 ✅"); render();
+}
+
+/* ---------------- 启动 ---------------- */
+initCode();
+const _savedKey = localStorage.getItem("sb_key");
+if (_savedKey) SUPA.key = _savedKey;
+render();
+</script>
+</body>
+</html>

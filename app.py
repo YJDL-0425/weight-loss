@@ -19,7 +19,7 @@ import plan
 import food_db
 import photo
 
-st.set_page_config(page_title="减肥数据看板", page_icon="🏃", layout="wide")
+st.set_page_config(page_title="热量账本", page_icon="📒", layout="wide")
 
 DISCLAIMER = ("⚠️ 本工具仅提供数据记录与一般性建议，不构成医疗建议。"
               "如有健康问题或特殊身体状况，请先咨询医生。")
@@ -72,7 +72,7 @@ if st.query_params.get("u") != user_code:
 
 # ---------- 侧边栏 ----------
 with st.sidebar:
-    st.title("🏃 减肥数据看板")
+    st.title("📒 热量账本")
     st.caption("你的减肥私人数据分析师")
 
     st.divider()
@@ -152,10 +152,10 @@ def ai_quota_ok(user):
 
 
 # ---------- 主界面 ----------
-st.title("减肥数据看板")
-st.caption("逐条记录食物和运动 → 系统自动算热量 → 看平衡曲线和缺口")
+st.title("📒 热量账本")
+st.caption("像记账一样记热量：逐条记录食物和运动 → 自动算账 → 看热量缺口")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 记录", "🎯 目标计划", "📊 数据看板", "🤖 AI 周报", "📸 变化回放"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 记账", "🎯 目标计划", "📊 数据看板", "🤖 AI 周报", "📸 变化回放"])
 
 # ===== Tab 1：记录 =====
 with tab1:
@@ -418,7 +418,7 @@ with tab2:
 with tab3:
     summary = db.get_daily_summary(user_code)
     if summary.empty:
-        st.info("暂无数据，请先在「记录」页录入。")
+        st.info("暂无数据，请先在「记账」页录入。")
     else:
         settings = db.get_all_settings(user_code)
 
@@ -533,7 +533,7 @@ with tab5:
     st.caption("每天拍照积累，挑战结束时用动画播放你的变化过程。")
     photos = photo.list_photos(user_code)
     if not photos:
-        st.info("还没有照片。去「📝 记录」页每天拍照上传，积累起来就能看变化了。")
+        st.info("还没有照片。去「📝 记账」页每天拍照上传，积累起来就能看变化了。")
     else:
         st.caption(f"已上传 {len(photos)} 张照片（{photos[0]['date']} ~ {photos[-1]['date']}）")
 

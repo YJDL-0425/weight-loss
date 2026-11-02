@@ -17,10 +17,12 @@ import charts
 import ai_report
 import plan
 import food_db
-import license as license_mod
 import photo
 
 st.set_page_config(page_title="减肥数据看板", page_icon="🏃", layout="wide")
+
+DISCLAIMER = ("⚠️ 本工具仅提供数据记录与一般性建议，不构成医疗建议。"
+              "如有健康问题或特殊身体状况，请先咨询医生。")
 
 
 # ---------- 用户编码 ----------
@@ -102,23 +104,6 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("🔒 付费墙（演示）")
-    paywall_on = st.toggle("启用付费墙", value=False)
-    if paywall_on:
-        license_key = st.text_input("License Key", type="password")
-        if st.button("验证 License"):
-            ok, msg = license_mod.verify_license(license_key)
-            if ok:
-                st.session_state["unlocked"] = True
-                st.success(msg)
-            else:
-                st.session_state["unlocked"] = False
-                st.error(msg)
-        unlocked = st.session_state.get("unlocked", False)
-    else:
-        unlocked = True
-
-    st.divider()
     st.subheader("🔧 连接诊断")
     if st.button("测试 Supabase 连接"):
         try:
@@ -145,6 +130,25 @@ def latest_weight(user):
         return float(db.get_setting(user, "start_weight") or 70)
     except (TypeError, ValueError):
         return 70.0
+
+
+AI_DAILY_LIMIT = 15  # 每个编码每天最多的 AI 调用次数
+
+
+def ai_quota_ok(user):
+    """检查并占用一次今日 AI 额度（按编码按天计）。"""
+    key = f"ai_usage_{pd.Timestamp.today().date()}"
+    try:
+        used = int(db.get_setting(user, key) or 0)
+    except (TypeError, ValueError):
+        used = 0
+    if used >= AI_DAILY_LIMIT:
+        return False
+    try:
+        db.set_setting(user, key, used + 1)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
 
 
 # ---------- 主界面 ----------
@@ -267,6 +271,8 @@ with tab1:
     if st.button("🤖 AI 识别并添加", use_container_width=True):
         if not food_text.strip():
             st.warning("请先描述你吃了什么")
+        elif api_key and not ai_quota_ok(user_code):
+            st.warning(f"今日 AI 次数已用完（{AI_DAILY_LIMIT} 次/天），明天再试或用手动添加。")
         else:
             with st.spinner("AI 识别中..."):
                 items, total, err = ai_report.parse_food(food_text, api_key, provider)
@@ -331,9 +337,12 @@ with tab1:
     st.subheader("💡 今日建议（运动 + 饮食调整）")
     if st.button("🤖 生成今日建议", use_container_width=True):
         food_list = foods_today.to_dict("records") if not foods_today.empty else []
-        with st.spinner("生成建议中..."):
-            advice = ai_report.daily_advice(food_list, intake_today, ex_today, settings, api_key, provider)
-        st.markdown(advice)
+        if api_key and not ai_quota_ok(user_code):
+            st.warning(f"今日 AI 次数已用完（{AI_DAILY_LIMIT} 次/天），明天再试。")
+        else:
+            with st.spinner("生成建议中..."):
+                advice = ai_report.daily_advice(food_list, intake_today, ex_today, settings, api_key, provider)
+            st.markdown(advice)
 
 # ===== Tab 2：目标计划 =====
 with tab2:
@@ -501,16 +510,16 @@ with tab3:
 
 # ===== Tab 4：AI 周报 =====
 with tab4:
-    if not unlocked:
-        st.warning("🔒 该功能需要付费解锁。请在左侧输入 License Key。")
+    summary = db.get_daily_summary(user_code)
+    if summary.empty:
+        st.info("暂无数据，先录入至少 1 天数据。")
     else:
-        summary = db.get_daily_summary(user_code)
-        if summary.empty:
-            st.info("暂无数据，先录入至少 1 天数据。")
-        else:
-            st.subheader("生成 AI 周报")
-            st.caption(f"当前共 {len(summary)} 天数据，周报基于最近 7 天生成。")
-            if st.button("📄 生成本周报告", type="primary"):
+        st.subheader("生成 AI 周报")
+        st.caption(f"当前共 {len(summary)} 天数据，周报基于最近 7 天生成。")
+        if st.button("📄 生成本周报告", type="primary"):
+            if api_key and not ai_quota_ok(user_code):
+                st.warning(f"今日 AI 次数已用完（{AI_DAILY_LIMIT} 次/天），明天再试。")
+            else:
                 recent = summary.sort_values("date").tail(7)
                 with st.spinner("正在生成报告..."):
                     report = ai_report.generate_report(recent, api_key, provider,
@@ -551,3 +560,7 @@ with tab5:
                 if gif_buf:
                     st.success("动画已生成，循环播放中：")
                     st.image(gif_buf, caption="你的变化过程", use_container_width=True)
+
+# ---------- 页脚：免责声明 ----------
+st.divider()
+st.caption(DISCLAIMER)
